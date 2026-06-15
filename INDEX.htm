@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title></title>
+  <script>
+    (function () {
+      'use strict';
+
+      var TEST_API_ORIGIN = 'https://api-test.skywork.ai';
+      var PROD_API_ORIGIN = 'https://api.skywork.ai';
+      var TEST_NOT_FOUND_URL = 'https://www-test.skywork.ai/website-no-permission';
+      var PROD_NOT_FOUND_URL = 'https://www.skywork.ai/website-no-permission';
+      var AUTH_PATH = '/gateway/api/website/auth';
+
+      function normalizeHost(host) {
+        return String(host || '').trim().toLowerCase().replace(/\.$/, '');
+      }
+
+      function isTestEnv(host) {
+        host = normalizeHost(host);
+        return host.slice('-test.skywork.website'.length * -1) === '-test.skywork.website';
+      }
+
+      function getAuthURL(host) {
+        return (isTestEnv(host) ? TEST_API_ORIGIN : PROD_API_ORIGIN) + AUTH_PATH;
+      }
+
+      function getNotFoundURL(host) {
+        return isTestEnv(host) ? TEST_NOT_FOUND_URL : PROD_NOT_FOUND_URL;
+      }
+
+      function redirectNotFound() {
+        var notFoundURL = getNotFoundURL(window.location.hostname);
+        if (window.location.href !== notFoundURL) {
+          window.location.replace(notFoundURL);
+        }
+      }
+
+      function parseResponse(resp) {
+        if (!resp || !resp.ok) {
+          throw new Error('website auth request failed');
+        }
+        return resp.json();
+      }
+
+      function dataOf(res) {
+        return res && (res.data || res) || null;
+      }
+
+      function denied(data) {
+        if (!data) {
+          return true;
+        }
+        return Number(data.auth_status) === 0 && String(data.role || '').toLowerCase() !== 'owner';
+      }
+
+      function pickToken(data) {
+        return String(data && (data.token || data.auth_token || data.website_token || data.access_token) || '').trim();
+      }
+
+      function redirectWithToken(token) {
+        var params = new URLSearchParams(window.location.search);
+        params.set('token', token);
+        window.location.replace('/?' + params.toString());
+      }
+
+      fetch(getAuthURL(window.location.hostname), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ auth_type: 'website' })
+      })
+        .then(parseResponse)
+        .then(function (res) {
+          if (res && typeof res.code !== 'undefined' && Number(res.code) !== 0) {
+            redirectNotFound();
+            return;
+          }
+
+          var data = dataOf(res);
+          if (denied(data)) {
+            redirectNotFound();
+            return;
+          }
+
+          var token = pickToken(data);
+          if (!token) {
+            redirectNotFound();
+            return;
+          }
+
+          redirectWithToken(token);
+        })
+        .catch(function () {
+          redirectNotFound();
+        });
+    }());
+  </script>
+</head>
+<body></body>
+</html>
